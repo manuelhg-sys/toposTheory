@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homo Topos: SVD of Infancy</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #canvas-container {
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            margin-bottom: 20px;
+        }
+        #controls {
+            width: 600px;
+            text-align: center;
+        }
+        input[type=range] {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #888;
+        }
+        h1 { font-size: 18px; margin-bottom: 5px; color: #fff; }
+        p { font-size: 14px; color: #aaa; margin-top: 0; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+</head>
+<body>
+
+    <div id="text-container">
+        <h1>Simulation I: The SVD of Infancy</h1>
+        <p>The collapse of sensory chaos (Noise) into the Rank-1 Ego (Line), and finally the Complex Real (Face).</p>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="controls">
+        <input type="range" id="rankSlider" min="0" max="100" value="0">
+        <div class="labels">
+            <span>k=0 (Chaos)</span>
+            <span>k=1 (The Ego)</span>
+            <span>k=∞ (The Real)</span>
+        </div>
+        <p id="status">Current State: Indiscrete Topology (Noise)</p>
+    </div>
+
+    <script>
+        let particles = [];
+        const numParticles = 800;
+        let slider;
+        let statusLabel;
+
+        // Target shapes
+        let chaosTargets = [];
+        let egoTargets = [];
+        let realTargets = [];
+
+        function setup() {
+            let canvas = createCanvas(600, 400);
+            canvas.parent('canvas-container');
+            
+            slider = select('#rankSlider');
+            statusLabel = select('#status');
+
+            // Initialize particles
+            for (let i = 0; i < numParticles; i++) {
+                particles.push(new Particle());
+                
+                // 1. Chaos Targets (Random positions)
+                chaosTargets.push(createVector(random(width), random(height)));
+
+                // 2. Ego Targets (A single oscillating line / Rank-1)
+                // We map particles to a diagonal line y = x (plus some sine wave oscillation later)
+                let t = map(i, 0, numParticles, 100, width - 100);
+                egoTargets.push(createVector(t, height / 2));
+
+                // 3. Real Targets (A Face)
+                // We procedurally generate points on a face shape
+                realTargets.push(generateFacePoint(i));
+            }
+        }
+
+        function draw() {
+            background(26, 26, 26, 50); // Slight trail effect
+
+            let val = slider.value();
+            let phase = 0; // 0 = Chaos, 0.5 = Ego, 1.0 = Real
+            
+            // Map slider (0-100) to Phases
+            // 0-50: Chaos -> Ego
+            // 50-100: Ego -> Real
+            
+            let target = [];
+            let interp = 0;
+
+            if (val < 50) {
+                // Transition Chaos -> Ego
+                statusLabel.html("State: Constructing the Ego (Rank Reduction)");
+                if(val < 5) statusLabel.html("State: Indiscrete Topology (Pure Noise)");
+                if(val > 45) statusLabel.html("State: The Mirror Stage (Rank-1 Ego)");
+                
+                interp = map(val, 0, 50, 0, 1);
+                for(let i=0; i<numParticles; i++) {
+                    // Interpolate between Chaos and Ego
+                    let x = lerp(chaosTargets[i].x, egoTargets[i].x, interp);
+                    let y = lerp(chaosTargets[i].y, egoTargets[i].y, interp);
+                    
+                    // Add the "Oscillation" of the Ego (The frequency)
+                    if (val > 40) {
+                        y += sin(frameCount * 0.1 + i * 0.05) * 20 * interp; 
+                    }
+                    target[i] = createVector(x, y);
+                }
+            } else {
+                // Transition Ego -> Real
+                statusLabel.html("State: Encountering the Real (Complexity)");
+                if(val > 95) statusLabel.html("State: The Face of the Other (High Rank)");
+
+                interp = map(val, 50, 100, 0, 1);
+                for(let i=0; i<numParticles; i++) {
+                    // Base Ego position (with oscillation fading out)
+                    let egoY = egoTargets[i].y + (sin(frameCount * 0.1 + i * 0.05) * 20 * (1-interp));
+                    
+                    let x = lerp(egoTargets[i].x, realTargets[i].x, interp);
+                    let y = lerp(egoY, realTargets[i].y, interp);
+                    target[i] = createVector(x, y);
+                }
+            }
+
+            // Update and Draw Particles
+            for (let i = 0; i < numParticles; i++) {
+                particles[i].seek(target[i]);
+                particles[i].update();
+                particles[i].show(val);
+            }
+        }
+
+        // --- Helper Classes & Functions ---
+
+        class Particle {
+            constructor() {
+                this.pos = createVector(random(width), random(height));
+                this.vel = createVector(0, 0);
+                this.acc = createVector(0, 0);
+                this.maxSpeed = 10;
+                this.maxForce = 0.2;
+            }
+
+            seek(target) {
+                let desired = p5.Vector.sub(target, this.pos);
+                let d = desired.mag();
+                
+                // Arrive behavior (slow down when close)
+                let speed = this.maxSpeed;
+                if (d < 100) {
+                    speed = map(d, 0, 100, 0, this.maxSpeed);
+                }
+                
+                desired.setMag(speed);
+                let steer = p5.Vector.sub(desired, this.vel);
+                steer.limit(this.maxForce);
+                this.applyForce(steer);
+            }
+
+            applyForce(force) {
+                this.acc.add(force);
+            }
+
+            update() {
+                this.vel.add(this.acc);
+                this.pos.add(this.vel);
+                this.acc.mult(0);
+            }
+
+            show(val) {
+                noStroke();
+                // Color shifts from Chaos (Grey/Blue) -> Ego (Gold/White) -> Real (Flesh/Pink)
+                let r, g, b;
+                if (val < 50) {
+                    let amt = map(val, 0, 50, 0, 1);
+                    r = lerp(100, 255, amt);
+                    g = lerp(100, 215, amt);
+                    b = lerp(150, 0, amt);
+                } else {
+                    let amt = map(val, 50, 100, 0, 1);
+                    r = lerp(255, 255, amt);
+                    g = lerp(215, 180, amt);
+                    b = lerp(0, 150, amt);
+                }
+                
+                fill(r, g, b, 200);
+                ellipse(this.pos.x, this.pos.y, 4, 4);
+            }
+        }
+
+        function generateFacePoint(index) {
+            // Procedurally generate points on a face
+            // 0-300: Outline
+            // 300-500: Eyes
+            // 500-650: Mouth
+            // 650-800: Nose/Details
+            
+            let x, y;
+            let cx = width/2;
+            let cy = height/2;
+
+            if (index < 300) {
+                // Outline (Oval)
+                let angle = map(index, 0, 300, 0, TWO_PI);
+                x = cx + cos(angle) * 120;
+                y = cy + sin(angle) * 150;
+            } else if (index < 500) {
+                // Eyes
+                let side = (index % 2 == 0) ? -1 : 1;
+                let t = map(index, 300, 500, 0, TWO_PI);
+                x = cx + (side * 50) + cos(t) * 20;
+                y = cy - 30 + sin(t) * 15;
+            } else if (index < 650) {
+                // Mouth (Arc)
+                let t = map(index, 500, 650, 0, PI);
+                x = cx + cos(t + PI) * 60; // Flip arc
+                y = cy + 80 + sin(t + PI) * 30;
+            } else {
+                // Nose (Vertical line + noise)
+                x = cx + random(-5, 5);
+                y = cy + map(index, 650, 800, -20, 40);
+            }
+            return createVector(x, y);
+        }
+
+    </script>
+</body>
+</html>
